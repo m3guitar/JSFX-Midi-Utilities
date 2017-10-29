@@ -1,0 +1,87 @@
+desc:Fixed Duration [OLE]
+
+slider1:3<1,12,1>Delay (48th-notes)
+slider2:0<0,16,1>Channel (0 = omni)
+
+in_pin:none
+out_pin:none
+
+@init
+typeNoteOn       = 0x90;
+typeNoteOff      = 0x80;
+arrayOffset      =  100;
+arrayChannel     =  250;
+subDivision      =   12;
+quarterNote      =    3;
+
+counter = 0;
+loop (128,
+    arrayOffset[counter]  = 0;
+    arrayChannel[counter] = 0;
+    counter += 1;
+);
+
+@slider
+quarterNote = slider1 / subDivision;
+in_channel  = slider2;
+
+@block
+// tempo variable not valid in @init context
+delay_samples = floor((quarterNote * srate * 60.0 / tempo) + 0.5);
+
+// Receive new midi messages
+while (
+    midirecv(offset, msg1, msg23) ?
+    (  
+        type     = msg1 & 0xF0;
+        channel  = msg1 & 0x0F;
+        velocity = msg23 >> 8;
+        note     = msg23 & 0x7F;
+
+        type == typeNoteOn ? (
+            temp_msg1  = typeNoteOff | channel;
+            temp_msg23 = note;
+
+            arrayOffset[note] > 0 && arrayChannel[note] == channel ?
+            (
+                // the note is queued, send noteOff immediately
+                midisend(offset, temp_msg1, temp_msg23);
+                arrayOffset[counter] = 0;
+            );
+
+            offset + delay_samples <= samplesblock ?
+            (
+                // fits in current block, send noteOff with delay
+                midisend(offset + delay_samples, temp_msg1, temp_msg23);
+            ) : (
+                // must be queued
+                arrayOffset[note] = offset + delay_samples;
+                arrayChannel[note] = channel;
+            );
+        );
+
+        type != typeNoteOff ? (
+            // Pass non-NoteOff events through
+            midisend(offset, msg1, msg23);
+        );
+
+        1;
+    ) : 0;
+);
+
+// Handle queued midi messages
+counter = 0;
+loop (128,
+    arrayOffset[counter] > 0 && arrayOffset[counter] <= samplesblock ?
+    (
+        // note fits in current block
+        temp_msg1  = typeNoteOff | arrayChannel[counter];
+        temp_msg23 = counter;
+        midisend(arrayOffset[counter], temp_msg1, temp_msg23);
+        arrayOffset[counter] = 0;
+    ) : (
+        // process again in next block
+        arrayOffset[counter] -= samplesblock;
+    );
+    counter += 1;
+)

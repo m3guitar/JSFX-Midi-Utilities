@@ -1,0 +1,106 @@
+desc:Midi Velocity [OLE]
+
+// Linear interpolation of MIDI velocity
+// Ole Kirkeby, October 2017
+
+in_pin:none
+out_pin:none
+
+slider1:127<0,127,1>Max
+slider2: 40<0,127,1>Min
+slider3:1.0<0,2.0,0.1>Slope
+
+@init
+noteOn = 0x90;
+maxVel = 127;
+minVel = 40;
+slope  = 1.0;
+square_size = 300;
+midi_max = 127;
+
+@slider
+slider1 != maxVel ?
+(
+    slider1 = max(slider1, slider2);
+);
+slider2 != minVel ?
+(
+    slider2 = min(slider1, slider2);
+);
+
+maxVel = slider1;
+minVel = slider2;
+slope  = slider3;
+
+@block
+while
+(
+    midirecv(offset, msg1, msg2, msg3) ?
+    (  
+        type     = msg1 & 0xF0;
+        channel  = msg1 & 0x0F;
+        velocity = msg3;
+
+        type == noteOn && velocity <= minVel ?
+        (
+            midisend(offset, msg1, msg2, minVel);
+        );
+
+        type == noteOn && velocity > minVel ?
+        (
+            newVel = minVel + slope * (velocity - minVel);
+            newVel > maxVel ?
+            (
+                newVel = maxVel;
+            );
+            midisend(offset, msg1, msg2, newVel);
+        );
+
+        type != noteOn ?
+        (
+            midisend(offset, msg1, msg2, msg3);
+        );
+        1;
+    ) : 0;
+);
+
+@gfx 0 0
+zx = gfx_w / 2 - square_size / 2;
+zy = gfx_h / 2 + square_size / 2;
+gfx_x = 0; gfx_y = 0;
+gfx_a = 1;
+gfx_r = 1; gfx_g = 1; gfx_b = 1;//colour white
+gfx_rectto(gfx_w,gfx_h);
+//draw square
+gfx_r = 0; gfx_g = 0; gfx_b = 0;//colour black
+gfx_a = 1; //no transparency
+gfx_x = zx; gfx_y = zy;
+gfx_lineto(zx              , zy - square_size);
+gfx_lineto(zx + square_size, zy - square_size);
+gfx_lineto(zx + square_size, zy              );
+gfx_lineto(zx              , zy              );
+
+gfx_r = 1; gfx_g = 0; gfx_b = 0;//colour red
+miny = square_size * minVel / midi_max;
+gfx_x = zx; gfx_y = zy - miny;
+slope == 0 ?
+(
+    gfx_lineto(zx + square_size, zy - miny);
+) :
+(
+    gfx_lineto(zx + miny, zy - miny); // 1st constant segment
+    xlimit = (maxVel + minVel * (slope - 1.0)) / slope;
+    xlimit <= midi_max ?
+    (
+        // intersects with top
+        gfx_lineto(zx + square_size * xlimit / midi_max,
+                   zy - square_size * maxVel / midi_max);
+        // 2nd constant segment
+        gfx_lineto(zx + square_size,
+                   zy - square_size * maxVel / midi_max);
+    ) : (
+        // intersects with right side
+        ylimit = slope * maxVel + minVel * (1.0 - slope); 
+        gfx_lineto(zx + square_size, zy - square_size * ylimit / midi_max);
+    );
+)

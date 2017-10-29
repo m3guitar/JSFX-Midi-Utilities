@@ -1,0 +1,89 @@
+desc:Midi Chord Trigger [OLE]
+
+// Trigger note on- and off from separate MIDI channel
+// Ole Kirkeby, October 2017
+
+
+in_pin:none
+out_pin:none
+slider1:10<1,16,1>Trigger Channel
+
+@init
+triggerchannel     = slider1 - 1;
+typeNoteOn         = 0x90;
+typeNoteOff        = 0x80;
+arrayNoteOn        = 150;
+arrayChannelOn     = 300;
+arrayNotePlayed    = 450;
+arrayChannelPlayed = 600;
+
+counter = 0;
+loop (128,
+    arrayNoteOn[counter]        = 0;
+    arrayChannelOn[counter]     = 0;
+    arrayNotePlayed[counter]    = 0;
+    arrayChannelPlayed[counter] = 0;
+    counter += 1;
+)
+
+@slider
+triggerchannel = slider1 - 1;
+
+@block
+while
+(
+    midirecv(offset, msg1, msg2, msg3) ?
+    (  
+        type     = msg1 & 0xF0;
+        channel  = msg1 & 0x0F;
+        note     = msg2;
+        velocity = msg3;
+
+        type == typeNoteOn ? 
+        (
+            channel == triggerchannel ?
+            (
+                counter = 0;
+                loop (128,
+                    arrayNoteOn[counter] > 0 ?
+                    (
+                        temp_msg1 = typeNoteOn | arrayChannelOn[counter];
+                        temp_msg2 = counter;
+                        temp_msg3 = velocity;
+                        arrayNotePlayed[counter] = 1;
+                        arrayChannelPlayed[counter] = arrayChannelOn[counter]; 
+                        midisend(offset, temp_msg1, temp_msg2, temp_msg3);
+                    );
+                    counter += 1;
+                );
+            ) : (
+                arrayNoteOn[note] = 1;
+                arrayChannelOn[note] = channel;
+            );
+        );
+
+        type == typeNoteOff ?
+        ( 
+            channel == triggerchannel ?
+            (
+                counter = 0;
+                loop (128,
+                    arrayNotePlayed[counter] > 0 ?
+                    (
+                        temp_msg1 = typeNoteOff | arrayChannelPlayed[counter];
+                        temp_msg2 = counter;
+                        temp_msg3 = 0;
+                        arrayNotePlayed[counter] = 0;
+                        midisend(offset, temp_msg1, temp_msg2, temp_msg3);
+                    );
+                    counter += 1;
+                );
+            ) : (
+                arrayNoteOn[note] = 0;
+            );
+        );
+        
+        //midisend(offset, msg1, msg2, msg3);
+        1;
+    ) : 0;
+);

@@ -1,0 +1,67 @@
+desc:Midi Channel [OLE]
+
+// Force MIDI messages to channel
+// Ole Kirkeby, October 2017
+
+in_pin:none
+out_pin:none
+slider1:10<0,16,1>Force to
+slider2: 0<0,16,1>Use only
+
+@init
+newChannel      = 10;
+typeNoteOn   = 0x90;
+typeNoteOff  = 0x80;
+s1 = 10;
+s2 = 0;
+
+@slider
+s1 == 0 && slider1 > 0 ?
+(
+    s2 = slider2 = 0;
+);
+
+s2 == 0 && slider2 > 0 ?
+(
+    s1 = slider1 = 0;
+);
+
+slider1 > 0 ?
+(
+    s1 = slider1;
+    newChannel = s1 - 1;
+);
+
+slider2 > 0 ?
+(
+    s2 = slider2;
+    newChannel = s2 - 1;
+);
+
+(slider1 + slider2) == 0 ?
+(
+    s1 = s2 = 0;
+);
+
+@block
+while
+(
+    midirecv(offset, msg1, msg2, msg3) ?
+    (  
+        type       = msg1 & 0xF0;
+        inChannel  = msg1 & 0x0F;
+
+        slider1 > 0 ?
+        (
+            msg1 = type | newChannel;
+            midisend(offset, msg1, msg2, msg3);
+        );
+
+        slider2 > 0 && inChannel == newChannel ?
+        (
+            midisend(offset, msg1, msg2, msg3);
+        );
+
+        1;
+    ) : 0;
+);

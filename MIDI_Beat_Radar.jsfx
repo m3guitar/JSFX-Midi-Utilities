@@ -1,0 +1,93 @@
+desc:Midi Beat Radar [OLE]
+
+// Draws the timing of onsets inside a circle.
+// The length of the line indicates the velocity.
+// Also prints the fractional value, in quaternotes,
+// of the most recent beat.
+//
+// Ole Kirkeby, October 2017
+
+slider1: 1<1,  4,1>Period
+slider2:25<1,100,1>History
+
+in_pin:none
+out_pin:none
+
+@init
+noteOn   = 0x90;
+radius   = 150;
+midi_max = 127;
+pi       =   3.1415926535;
+period   =   1;
+history  =  32;
+aBeat    = 100;
+aVelo    = 200;
+
+counter = 0;
+loop (history,
+    aBeat[counter] = 0;
+    aVelo[counter] = 0;
+    counter += 1;
+);
+counter = 0;
+
+@slider
+period  = slider1;
+history = slider2;
+
+@block
+while
+(
+    now = beat_position;
+
+    midirecv(offset, msg1, msg2, msg3) ?
+    (
+        type     = msg1 & 0xF0;
+        channel  = msg1 & 0x0F;
+        velocity = msg3;
+        
+        type == noteOn ?
+        (
+                counter = (counter + 1) % history;
+                aBeat[counter] = now + offset * tempo / (60 * srate);
+                aVelo[counter] = (radius * velocity) / midi_max;
+        );
+                
+        midisend(offset, msg1, msg2, msg3);
+
+        1;
+    ) : 0;
+);
+
+@gfx 400 400
+zx = gfx_w / 2;
+zy = gfx_h / 2;
+gfx_x = 0; gfx_y = 0;
+gfx_r = 1; gfx_g = 1; gfx_b = 1;//colour white
+gfx_rectto(gfx_w,gfx_h);
+//draw circle
+gfx_r = 0.8; gfx_g = 0.8; gfx_b = 0.8;//colour grey
+gfx_circle(zx,zy,radius);
+play_state > 0 ?
+(
+    // Draw sweeping time indicator
+    gfx_x = zx; gfx_y = zy;
+    gfx_lineto(zx + 0.9 * radius * sin(now * 2 * pi / period),
+               zy - 0.9 * radius * cos(now * 2 * pi / period));
+    // Draw history of beats
+    gfxcounter = 0;
+    loop (history,
+        gfx_x = zx; gfx_y = zy;
+        gfx_lineto(zx + aVelo[gfxcounter] * sin(aBeat[gfxcounter] * 2 * pi / period),
+                   zy - aVelo[gfxcounter] * cos(aBeat[gfxcounter] * 2 * pi / period));
+        gfxcounter += 1;
+    );
+    // Draw latest beat in black
+    gfx_x = zx; gfx_y = zy;
+    gfx_r = 0; gfx_g = 0; gfx_b = 0;//colour black
+    gfx_lineto(zx + aVelo[counter] * sin(aBeat[counter] * 2 * pi / period),
+               zy - aVelo[counter] * cos(aBeat[counter] * 2 * pi / period));
+    // Draw fractional part of beat value
+    gfx_x = zx - radius; gfx_y = zy - radius;
+    gfx_drawnumber(aBeat[counter] - floor(aBeat[counter]),3);
+);

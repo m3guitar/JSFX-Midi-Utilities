@@ -1,0 +1,37 @@
+desc:Midi Solo
+
+// Play only the most recent note
+// Ole Kirkeby, September 2017
+
+in_pin:none
+out_pin:none
+
+@init
+typeNoteOn      = $x90;
+typeNoteOff     = $x80;
+numberNoteOn    = 0;
+numberChannelOn = 0;
+
+@block
+while
+(
+  midirecv(offset, msg1, msg23) ?
+  (  
+    type     = msg1 & 0xF0;
+    channel  = msg1 & 0x0F;
+    velocity = msg23 >> 8;
+    note     = msg23 & 0x7F;
+
+    type == typeNoteOn ? 
+    (
+      temp_msg1  = typeNoteOff | numberChannelOn;
+      temp_msg23 = numberNoteOn;
+      midisend(offset, temp_msg1, temp_msg23);
+      numberNoteOn    = note;
+      numberChannelOn = channel;
+    );
+    
+    midisend(offset, msg1, msg23);
+    1;
+  ) : 0;
+);
